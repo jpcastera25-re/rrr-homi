@@ -2,29 +2,42 @@
 import { checkGates } from "../../lib/gates-helpers.js";
 
 export default async function handler(req, res) {
-  const { to, msg, channel } = req.body || {};
-  const now = new Date();
+  try {
+    const method = req.method || "GET";
+    const body =
+      method === "POST"
+        ? typeof req.body === "string"
+          ? JSON.parse(req.body)
+          : req.body || {}
+        : {};
 
-  // Use the shared helper
-  const { diagnostics, decision } = checkGates(to);
+    // ✅ Read from query string too (fixes GET ?to=... not being seen)
+    const qp = req.query || {};
+    const to = (body?.to ?? qp?.to ?? "").trim() || null;
+    const channel = body?.channel ?? qp?.channel ?? "email";
+    const msg = body?.msg ?? qp?.msg ?? "";
 
-  const safePreview = {
-    to: to || "(none)",
-    channel: channel || "email",
-    msg: msg || "(empty)",
-    ts: now.toISOString(),
-    dryRun: true,
-  };
+    const decision = await checkGates(to);
 
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.status(200).send(
-    JSON.stringify({
+    return res.status(200).json({
       ok: true,
       note: "Dry-run only: no outbound call made",
-      payload: safePreview,
-      diagnostics,
-      decision,
-    })
-  );
+      payload: { to: to || "(none)", channel, msg: msg || "(empty)" },
+      ts: new Date().toISOString(),
+      dryRun: true,
+      diagnostics: decision?.diagnostics ?? {
+        OUTBOUND: decision?.OUTBOUND,
+        ALLOWLIST_count: decision?.ALLOWLIST_count,
+        QUIET_HOURS: decision?.QUIET_HOURS,
+        SEND_IMPL: decision?.SEND_IMPL,
+      },
+      decision: {
+        wouldSend: !!decision?.wouldSend,
+        reasons: decision?.reasons ?? [],
+      },
+    });
+  } catch (err) {
+    console.error("dry-run error:", err);
+    return res.status(500).json({ ok: false, error: String(err?.message || err) });
+  }
 }
-
