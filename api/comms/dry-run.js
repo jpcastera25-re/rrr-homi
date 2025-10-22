@@ -1,5 +1,5 @@
 // api/comms/dry-run.js
-import { checkGates } from "@/lib/gates-helpers";
+import { checkGates } from "../../lib/gates-helpers.js";
 
 export default async function handler(req, res) {
   const { to, msg, channel } = req.body || {};
